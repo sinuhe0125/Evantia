@@ -145,7 +145,7 @@ export function Trabajadores() {
     setModalCrear(true);
   };
 
-  const guardarCrear = (e: React.FormEvent) => {
+  const guardarCrear = async (e: React.FormEvent) => {
     e.preventDefault();
     const techs = formCrear.tecnologias.split(',').map(t => t.trim()).filter(Boolean);
     const nuevo: Trabajador = {
@@ -156,7 +156,7 @@ export function Trabajadores() {
       telefono:    formCrear.telefono,
       tecnologias: techs,
     };
-    setTrabajadores([...trabajadores, nuevo]);
+    await setTrabajadores([...trabajadores, nuevo]);
     setModalCrear(false);
     setFormCrear(FORM_VACÍO);
   };
@@ -175,11 +175,11 @@ export function Trabajadores() {
     setModalEditar(true);
   };
 
-  const guardarEditar = (e: React.FormEvent) => {
+  const guardarEditar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trabajadorEditar) return;
     const techs = formEditar.tecnologias.split(',').map(t => t.trim()).filter(Boolean);
-    setTrabajadores(trabajadores.map(t =>
+    await setTrabajadores(trabajadores.map(t =>
       t.id === trabajadorEditar.id
         ? { ...t, nombre: formEditar.nombre, cargo: formEditar.cargo, email: formEditar.email, telefono: formEditar.telefono, tecnologias: techs }
         : t
@@ -195,9 +195,9 @@ export function Trabajadores() {
     setModalEliminar(true);
   };
 
-  const confirmarEliminar = () => {
+  const confirmarEliminar = async () => {
     if (!trabajadorEliminar) return;
-    setTrabajadores(trabajadores.filter(t => t.id !== trabajadorEliminar.id));
+    await setTrabajadores(trabajadores.filter(t => t.id !== trabajadorEliminar.id));
     setModalEliminar(false);
     setTrabajadorEliminar(null);
   };

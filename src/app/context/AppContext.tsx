@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { dbGetUsuarios, dbSetUsuarios, dbConfigured, USUARIOS_DEFAULT, type UsuarioDB } from '../services/db';
+import {
+  dbGetUsuarios, dbSetUsuarios, dbConfigured, USUARIOS_DEFAULT,
+  kvGet, kvSet, type UsuarioDB
+} from '../services/db';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +25,7 @@ export interface AuthUser {
   nombre: string; email: string; rol: string; iniciales: string;
 }
 
-// ─── Datos iniciales (localStorage — por navegador) ───────────────────────────
+// ─── Datos iniciales ──────────────────────────────────────────────────────────
 
 const cargosIniciales: Cargo[] = [
   { id:1, nombre:'Desarrollador Fullstack',      descripcion:'Desarrollo tanto en frontend como backend', categoria:'Desarrollo',      activo:true  },
@@ -44,7 +47,7 @@ const trabajadoresIniciales: Trabajador[] = [
   { id:6, nombre:'Roberto Díaz',   cargo:'Project Manager',                email:'roberto.diaz@email.com',   telefono:'+56 9 3333 6666', tecnologias:[] },
 ];
 
-function cs(fi:string, ff:string, t:'2 semanas'|'3 semanas'|'1 mes') {
+function cs(fi:string,ff:string,t:'2 semanas'|'3 semanas'|'1 mes'){
   const d={'2 semanas':14,'3 semanas':21,'1 mes':30};
   const diff=(new Date(ff).getTime()-new Date(fi).getTime())/86400000;
   return diff<=0?0:Math.max(1,Math.round(diff/d[t]));
@@ -69,17 +72,7 @@ const rolesIniciales: Rol[] = [
   { id:5, nombre:'Invitado',       descripcion:'Acceso limitado de solo lectura', permisos:['Ver'],                            usuarios:2,  activo:false },
 ];
 
-// ─── Storage helpers (datos locales — proyectos, trabajadores, etc.) ──────────
-
-function load<T>(key: string, fallback: T): T {
-  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) as T : fallback; }
-  catch { return fallback; }
-}
-function save<T>(key: string, val: T) {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* noop */ }
-}
-
-// ─── Sesión (sessionStorage — sobrevive F5, se borra al cerrar pestaña) ───────
+// ─── Sesión ───────────────────────────────────────────────────────────────────
 
 function loadSession(): AuthUser | null {
   try { const r = sessionStorage.getItem('auth'); return r ? JSON.parse(r) as AuthUser : null; }
@@ -89,10 +82,7 @@ function saveSession(u: AuthUser | null) {
   try { u ? sessionStorage.setItem('auth', JSON.stringify(u)) : sessionStorage.removeItem('auth'); }
   catch { /* noop */ }
 }
-
-function initials(nombre: string) {
-  return nombre.split(' ').slice(0,2).map(n=>n[0]).join('').toUpperCase();
-}
+function initials(n: string) { return n.split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase(); }
 
 // ─── Contexto ─────────────────────────────────────────────────────────────────
 
@@ -102,12 +92,12 @@ interface Ctx {
   logout: () => void;
   isAuthenticated: boolean;
   dbReady: boolean;
-  cargos: Cargo[];       setCargos: React.Dispatch<React.SetStateAction<Cargo[]>>;
+  cargos: Cargo[];       setCargos: (v: Cargo[]) => Promise<void>;
   cargosActivos: Cargo[];
-  trabajadores: Trabajador[]; setTrabajadores: React.Dispatch<React.SetStateAction<Trabajador[]>>;
-  proyectos: Proyecto[];      setProyectos: React.Dispatch<React.SetStateAction<Proyecto[]>>;
-  usuarios: Usuario[];        setUsuarios: (u: Usuario[]) => Promise<void>;
-  roles: Rol[];               setRoles: React.Dispatch<React.SetStateAction<Rol[]>>;
+  trabajadores: Trabajador[]; setTrabajadores: (v: Trabajador[]) => Promise<void>;
+  proyectos: Proyecto[];      setProyectos: (v: Proyecto[]) => Promise<void>;
+  usuarios: Usuario[];        setUsuarios: (v: Usuario[]) => Promise<void>;
+  roles: Rol[];               setRoles: (v: Rol[]) => Promise<void>;
 }
 
 const AppContext = createContext<Ctx | null>(null);
@@ -115,45 +105,43 @@ const AppContext = createContext<Ctx | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [authUser,     setAuthUser]     = useState<AuthUser | null>(loadSession);
   const [dbReady,      setDbReady]      = useState(false);
+  const [usuarios,     setUsuariosState]= useState<Usuario[]>(USUARIOS_DEFAULT);
+  const [cargos,       setCargosState]  = useState<Cargo[]>(cargosIniciales);
+  const [trabajadores, setTrabajadoresState] = useState<Trabajador[]>(trabajadoresIniciales);
+  const [proyectos,    setProyectosState]    = useState<Proyecto[]>(proyectosIniciales);
+  const [roles,        setRolesState]        = useState<Rol[]>(rolesIniciales);
 
-  // Usuarios: se cargan desde la nube (o fallback local)
-  const [usuarios, setUsuariosState]    = useState<Usuario[]>(USUARIOS_DEFAULT);
-
-  // Datos locales (por navegador)
-  const [cargos,       setCargos]       = useState<Cargo[]>     (() => load('app_cargos',       cargosIniciales));
-  const [trabajadores, setTrabajadores] = useState<Trabajador[]>(() => load('app_trabajadores', trabajadoresIniciales));
-  const [proyectos,    setProyectos]    = useState<Proyecto[]>  (() => load('app_proyectos',    proyectosIniciales));
-  const [roles,        setRoles]        = useState<Rol[]>       (() => load('app_roles',        rolesIniciales));
-
-  // Al arrancar: cargar usuarios desde la nube
+  // Cargar todos los datos desde KV al arrancar
   useEffect(() => {
-    dbGetUsuarios().then(u => {
+    Promise.all([
+      dbGetUsuarios(),
+      kvGet('cargos',       cargosIniciales),
+      kvGet('trabajadores', trabajadoresIniciales),
+      kvGet('proyectos',    proyectosIniciales),
+      kvGet('roles',        rolesIniciales),
+    ]).then(([u, c, t, p, r]) => {
       setUsuariosState(u);
+      setCargosState(c);
+      setTrabajadoresState(t);
+      setProyectosState(p);
+      setRolesState(r);
       setDbReady(true);
     });
   }, []);
 
-  // Persistir datos locales
-  useEffect(() => { save('app_cargos',       cargos);       }, [cargos]);
-  useEffect(() => { save('app_trabajadores', trabajadores); }, [trabajadores]);
-  useEffect(() => { save('app_proyectos',    proyectos);    }, [proyectos]);
-  useEffect(() => { save('app_roles',        roles);        }, [roles]);
-  useEffect(() => { saveSession(authUser);                  }, [authUser]);
+  useEffect(() => { saveSession(authUser); }, [authUser]);
 
-  // setUsuarios: actualiza estado + sube a la nube
-  const setUsuarios = useCallback(async (u: Usuario[]) => {
-    setUsuariosState(u);
-    await dbSetUsuarios(u);
-  }, []);
+  // Setters que actualizan estado + KV
+  const setUsuarios     = useCallback(async (v: Usuario[])     => { setUsuariosState(v);     await dbSetUsuarios(v); }, []);
+  const setCargos       = useCallback(async (v: Cargo[])       => { setCargosState(v);       await kvSet('cargos', v); }, []);
+  const setTrabajadores = useCallback(async (v: Trabajador[])  => { setTrabajadoresState(v); await kvSet('trabajadores', v); }, []);
+  const setProyectos    = useCallback(async (v: Proyecto[])    => { setProyectosState(v);    await kvSet('proyectos', v); }, []);
+  const setRoles        = useCallback(async (v: Rol[])         => { setRolesState(v);        await kvSet('roles', v); }, []);
 
-  // Login: verifica contra la lista cargada de la nube
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    // Recargar usuarios frescos antes de validar
     const lista = await dbGetUsuarios();
     setUsuariosState(lista);
-    const found = lista.find(
-      u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
-    );
+    const found = lista.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
     if (!found) return false;
     const user: AuthUser = { nombre: found.nombre, email: found.email, rol: found.rol, iniciales: initials(found.nombre) };
     setAuthUser(user);

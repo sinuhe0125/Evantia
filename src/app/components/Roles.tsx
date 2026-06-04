@@ -25,7 +25,7 @@ export function Roles() {
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const permisosArray = [];
@@ -43,7 +43,7 @@ export function Roles() {
       activo: true
     };
 
-    setRoles([...roles, nuevoRol]);
+    await setRoles([...roles, nuevoRol]);
     setFormData({ 
       nombre: '', 
       descripcion: '', 
@@ -52,12 +52,12 @@ export function Roles() {
     setIsDialogOpen(false);
   };
 
-  const handleDelete = (id: number) => {
-    setRoles(roles.filter(r => r.id !== id));
+  const handleDelete = async (id: number) => {
+    await setRoles(roles.filter(r => r.id !== id));
   };
 
-  const toggleActivo = (id: number) => {
-    setRoles(roles.map(r => r.id === id ? { ...r, activo: !r.activo } : r));
+  const toggleActivo = async (id: number) => {
+    await setRoles(roles.map(r => r.id === id ? { ...r, activo: !r.activo } : r));
   };
 
   return (

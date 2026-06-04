@@ -126,7 +126,7 @@ export function Proyectos() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (fechaError) return;
     if (formData.fechaInicio && formData.fechaFin && new Date(formData.fechaFin) <= new Date(formData.fechaInicio)) {
@@ -134,10 +134,10 @@ export function Proyectos() {
       return;
     }
     if (editingProyecto) {
-      setProyectos(proyectos.map(p => p.id === editingProyecto.id ? { ...formData, id: editingProyecto.id } : p));
+      await setProyectos(proyectos.map(p => p.id === editingProyecto.id ? { ...formData, id: editingProyecto.id } : p));
     } else {
       const maxId = proyectos.length > 0 ? Math.max(...proyectos.map(p => p.id)) : 0;
-      setProyectos([...proyectos, { ...formData, id: maxId + 1 }]);
+      await setProyectos([...proyectos, { ...formData, id: maxId + 1 }]);
     }
     resetForm();
     setIsDialogOpen(false);
@@ -156,9 +156,9 @@ export function Proyectos() {
     setDeleteDialog(true);
   };
 
-  const confirmarEliminar = () => {
+  const confirmarEliminar = async () => {
     if (proyectoAEliminar) {
-      setProyectos(proyectos.filter(p => p.id !== proyectoAEliminar.id));
+      await setProyectos(proyectos.filter(p => p.id !== proyectoAEliminar.id));
     }
     setDeleteDialog(false);
     setProyectoAEliminar(null);
