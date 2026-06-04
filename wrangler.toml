@@ -2,6 +2,5 @@ name = "evantiaproject"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "dist"
 
-[[kv_namespaces]]
-binding = "DEVSTREAM_KV"
-id = "REEMPLAZAR_CON_KV_ID"
+[build]
+command = "npm install --legacy-peer-deps && npm run build"
