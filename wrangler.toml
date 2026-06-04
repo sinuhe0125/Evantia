@@ -4,4 +4,4 @@ pages_build_output_dir = "dist"
 
 [[kv_namespaces]]
 binding = "DEVSTREAM_KV"
-id = "placeholder"
+id = "013017932e884a2aa69fc4d44d94ae5e"
