@@ -156,7 +156,7 @@ export function Trabajadores() {
       telefono:    formCrear.telefono,
       tecnologias: techs,
     };
-    await setTrabajadores([...trabajadores, nuevo]);
+    await setTrabajadores([...trabajadores, nuevo], `Trabajador creado: ${nuevo.nombre}`);
     setModalCrear(false);
     setFormCrear(FORM_VACÍO);
   };
@@ -197,7 +197,7 @@ export function Trabajadores() {
 
   const confirmarEliminar = async () => {
     if (!trabajadorEliminar) return;
-    await setTrabajadores(trabajadores.filter(t => t.id !== trabajadorEliminar.id));
+    await setTrabajadores(trabajadores.filter(t => t.id !== trabajadorEliminar.id), `Trabajador eliminado: ${trabajadorEliminar?.nombre}`);
     setModalEliminar(false);
     setTrabajadorEliminar(null);
   };

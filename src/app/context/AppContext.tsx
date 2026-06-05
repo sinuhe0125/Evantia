@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
-  dbGetUsuarios, dbSetUsuarios, dbConfigured, USUARIOS_DEFAULT,
-  kvGet, kvSet, type UsuarioDB
+  dbGetUsuarios, dbSetUsuarios, USUARIOS_DEFAULT,
+  kvGet, kvSet, trazaPost, type UsuarioDB
 } from '../services/db';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -37,7 +37,6 @@ const cargosIniciales: Cargo[] = [
   { id:7, nombre:'QA Engineer',                    descripcion:'Aseguramiento de calidad y pruebas',        categoria:'Calidad',         activo:true  },
   { id:8, nombre:'DevOps Engineer',                descripcion:'Infraestructura y CI/CD',                   categoria:'Infraestructura', activo:false },
 ];
-
 const trabajadoresIniciales: Trabajador[] = [
   { id:1, nombre:'Juan Pérez',     cargo:'Desarrollador Fullstack',      email:'juan.perez@email.com',     telefono:'+56 9 8888 1111', tecnologias:['React','Node.js','PostgreSQL','TypeScript'] },
   { id:2, nombre:'María González', cargo:'Desarrollador Frontend',        email:'maria.gonzalez@email.com', telefono:'+56 9 7777 2222', tecnologias:['React','Vue.js','Tailwind CSS','JavaScript'] },
@@ -46,13 +45,11 @@ const trabajadoresIniciales: Trabajador[] = [
   { id:5, nombre:'Laura Martínez', cargo:'Analista',                       email:'laura.martinez@email.com', telefono:'+56 9 4444 5555', tecnologias:[] },
   { id:6, nombre:'Roberto Díaz',   cargo:'Project Manager',                email:'roberto.diaz@email.com',   telefono:'+56 9 3333 6666', tecnologias:[] },
 ];
-
 function cs(fi:string,ff:string,t:'2 semanas'|'3 semanas'|'1 mes'){
   const d={'2 semanas':14,'3 semanas':21,'1 mes':30};
   const diff=(new Date(ff).getTime()-new Date(fi).getTime())/86400000;
   return diff<=0?0:Math.max(1,Math.round(diff/d[t]));
 }
-
 const proyectosIniciales: Proyecto[] = [
   {id:1,nombre:'Sistema de Gestión ERP',descripcion:'ERP con módulos de contabilidad, inventario y RRHH',fechaInicio:'2024-01-15',fechaFin:'2024-12-30',tipoSprint:'2 semanas',totalSprints:cs('2024-01-15','2024-12-30','2 semanas'),estado:'En Progreso',presupuesto:85000000,responsable:'Juan Pérez',trabajadoresAsignados:[1,2,3],progreso:65},
   {id:2,nombre:'App Móvil Bancaria',descripcion:'Aplicación móvil nativa iOS/Android con seguridad biométrica',fechaInicio:'2024-02-01',fechaFin:'2024-11-15',tipoSprint:'3 semanas',totalSprints:cs('2024-02-01','2024-11-15','3 semanas'),estado:'En Progreso',presupuesto:62000000,responsable:'María González',trabajadoresAsignados:[2,4],progreso:42},
@@ -63,7 +60,6 @@ const proyectosIniciales: Proyecto[] = [
   {id:7,nombre:'Dashboard Analytics BI',descripcion:'Business Intelligence con visualización interactiva',fechaInicio:'2023-11-01',fechaFin:'2024-03-15',tipoSprint:'1 mes',totalSprints:cs('2023-11-01','2024-03-15','1 mes'),estado:'Completado',presupuesto:38000000,responsable:'Roberto Díaz',trabajadoresAsignados:[2,5,6],progreso:100},
   {id:8,nombre:'Sistema de Reservas SaaS',descripcion:'Plataforma SaaS multi-tenant para reservas online',fechaInicio:'2024-05-01',fechaFin:'2024-12-31',tipoSprint:'2 semanas',totalSprints:cs('2024-05-01','2024-12-31','2 semanas'),estado:'Planificado',presupuesto:45000000,responsable:'Laura Martínez',trabajadoresAsignados:[],progreso:0},
 ];
-
 const rolesIniciales: Rol[] = [
   { id:1, nombre:'Administrador',  descripcion:'Acceso total al sistema',         permisos:['Crear','Editar','Eliminar','Ver'], usuarios:3,  activo:true  },
   { id:2, nombre:'Project Manager',descripcion:'Gestión de proyectos y equipos',  permisos:['Crear','Editar','Ver'],           usuarios:5,  activo:true  },
@@ -92,51 +88,93 @@ interface Ctx {
   logout: () => void;
   isAuthenticated: boolean;
   dbReady: boolean;
-  cargos: Cargo[];       setCargos: (v: Cargo[]) => Promise<void>;
+  registrarTraza: (accion: string, modulo: string, descripcion: string) => void;
+  recargarDatos: () => Promise<void>;
+  cargos: Cargo[];       setCargos: (v: Cargo[], desc?: string) => Promise<void>;
   cargosActivos: Cargo[];
-  trabajadores: Trabajador[]; setTrabajadores: (v: Trabajador[]) => Promise<void>;
-  proyectos: Proyecto[];      setProyectos: (v: Proyecto[]) => Promise<void>;
+  trabajadores: Trabajador[]; setTrabajadores: (v: Trabajador[], desc?: string) => Promise<void>;
+  proyectos: Proyecto[];      setProyectos: (v: Proyecto[], desc?: string) => Promise<void>;
   usuarios: Usuario[];        setUsuarios: (v: Usuario[]) => Promise<void>;
-  roles: Rol[];               setRoles: (v: Rol[]) => Promise<void>;
+  roles: Rol[];               setRoles: (v: Rol[], desc?: string) => Promise<void>;
 }
 
 const AppContext = createContext<Ctx | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [authUser,     setAuthUser]     = useState<AuthUser | null>(loadSession);
-  const [dbReady,      setDbReady]      = useState(false);
-  const [usuarios,     setUsuariosState]= useState<Usuario[]>(USUARIOS_DEFAULT);
-  const [cargos,       setCargosState]  = useState<Cargo[]>(cargosIniciales);
-  const [trabajadores, setTrabajadoresState] = useState<Trabajador[]>(trabajadoresIniciales);
-  const [proyectos,    setProyectosState]    = useState<Proyecto[]>(proyectosIniciales);
-  const [roles,        setRolesState]        = useState<Rol[]>(rolesIniciales);
+  const [authUser,          setAuthUser]          = useState<AuthUser | null>(loadSession);
+  const [dbReady,           setDbReady]           = useState(false);
+  const [usuarios,          setUsuariosState]      = useState<Usuario[]>(USUARIOS_DEFAULT);
+  const [cargos,            setCargosState]        = useState<Cargo[]>(cargosIniciales);
+  const [trabajadores,      setTrabajadoresState]  = useState<Trabajador[]>(trabajadoresIniciales);
+  const [proyectos,         setProyectosState]     = useState<Proyecto[]>(proyectosIniciales);
+  const [roles,             setRolesState]         = useState<Rol[]>(rolesIniciales);
+  const authRef = useRef<AuthUser | null>(null);
+  authRef.current = authUser;
 
   // Cargar todos los datos desde KV al arrancar
-  useEffect(() => {
-    Promise.all([
+  const recargarDatos = useCallback(async () => {
+    const [u, c, t, p, r] = await Promise.all([
       dbGetUsuarios(),
       kvGet('cargos',       cargosIniciales),
       kvGet('trabajadores', trabajadoresIniciales),
       kvGet('proyectos',    proyectosIniciales),
       kvGet('roles',        rolesIniciales),
-    ]).then(([u, c, t, p, r]) => {
-      setUsuariosState(u);
-      setCargosState(c);
-      setTrabajadoresState(t);
-      setProyectosState(p);
-      setRolesState(r);
-      setDbReady(true);
-    });
+    ]);
+    setUsuariosState(u);
+    setCargosState(c);
+    setTrabajadoresState(t);
+    setProyectosState(p);
+    setRolesState(r);
   }, []);
+
+  useEffect(() => {
+    recargarDatos().then(() => setDbReady(true));
+  }, [recargarDatos]);
+
+  // Polling cada 30s para sincronizar datos entre navegadores
+  useEffect(() => {
+    const id = setInterval(() => { if (authRef.current) recargarDatos(); }, 30000);
+    return () => clearInterval(id);
+  }, [recargarDatos]);
 
   useEffect(() => { saveSession(authUser); }, [authUser]);
 
-  // Setters que actualizan estado + KV
-  const setUsuarios     = useCallback(async (v: Usuario[])     => { setUsuariosState(v);     await dbSetUsuarios(v); }, []);
-  const setCargos       = useCallback(async (v: Cargo[])       => { setCargosState(v);       await kvSet('cargos', v); }, []);
-  const setTrabajadores = useCallback(async (v: Trabajador[])  => { setTrabajadoresState(v); await kvSet('trabajadores', v); }, []);
-  const setProyectos    = useCallback(async (v: Proyecto[])    => { setProyectosState(v);    await kvSet('proyectos', v); }, []);
-  const setRoles        = useCallback(async (v: Rol[])         => { setRolesState(v);        await kvSet('roles', v); }, []);
+  // Registrar traza con usuario activo
+  const registrarTraza = useCallback((accion: string, modulo: string, descripcion: string) => {
+    const u = authRef.current;
+    if (!u) return;
+    trazaPost({ usuario: u.nombre, rol: u.rol, accion, modulo, descripcion });
+  }, []);
+
+  // Setters con trazabilidad automática
+  const setCargos = useCallback(async (v: Cargo[], desc?: string) => {
+    setCargosState(v);
+    await kvSet('cargos', v);
+    if (desc) registrarTraza('Modificar', 'Cargos', desc);
+  }, [registrarTraza]);
+
+  const setTrabajadores = useCallback(async (v: Trabajador[], desc?: string) => {
+    setTrabajadoresState(v);
+    await kvSet('trabajadores', v);
+    if (desc) registrarTraza('Modificar', 'Trabajadores', desc);
+  }, [registrarTraza]);
+
+  const setProyectos = useCallback(async (v: Proyecto[], desc?: string) => {
+    setProyectosState(v);
+    await kvSet('proyectos', v);
+    if (desc) registrarTraza('Modificar', 'Proyectos', desc);
+  }, [registrarTraza]);
+
+  const setRoles = useCallback(async (v: Rol[], desc?: string) => {
+    setRolesState(v);
+    await kvSet('roles', v);
+    if (desc) registrarTraza('Modificar', 'Roles', desc);
+  }, [registrarTraza]);
+
+  const setUsuarios = useCallback(async (v: Usuario[]) => {
+    setUsuariosState(v);
+    await dbSetUsuarios(v);
+  }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     const lista = await dbGetUsuarios();
@@ -146,16 +184,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const user: AuthUser = { nombre: found.nombre, email: found.email, rol: found.rol, iniciales: initials(found.nombre) };
     setAuthUser(user);
     saveSession(user);
+    trazaPost({ usuario: found.nombre, rol: found.rol, accion: 'Login', modulo: 'Sistema', descripcion: `${found.nombre} inició sesión` });
     return true;
   }, []);
 
-  const logout = useCallback(() => { setAuthUser(null); saveSession(null); }, []);
+  const logout = useCallback(() => {
+    if (authRef.current) {
+      trazaPost({ usuario: authRef.current.nombre, rol: authRef.current.rol, accion: 'Logout', modulo: 'Sistema', descripcion: `${authRef.current.nombre} cerró sesión` });
+    }
+    setAuthUser(null);
+    saveSession(null);
+  }, []);
 
   return (
     <AppContext.Provider value={{
       authUser, login, logout,
       isAuthenticated: authUser !== null,
-      dbReady,
+      dbReady, registrarTraza, recargarDatos,
       cargos, setCargos, cargosActivos: cargos.filter(c => c.activo),
       trabajadores, setTrabajadores,
       proyectos, setProyectos,
